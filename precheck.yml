@@ -3,9 +3,6 @@
   hosts: all
   become: yes
   gather_facts: yes
-  ansible_user=ansible
-  ansible_become=true
-
 
   vars:
     report_path: "/tmp/precheck_report_{{ inventory_hostname }}.txt"
@@ -26,11 +23,11 @@
       register: cpu_load
 
     - name: Get memory usage
-      shell: free -m
+      command: free -m
       register: memory_output
 
     - name: Get disk usage
-      shell: df -h
+      command: df -h
       register: disk_output
 
     - name: Get root disk usage percentage
@@ -49,7 +46,7 @@
           Uptime          : {{ uptime_output.stdout }}
           Kernel Version  : {{ kernel_output.stdout }}
           CPU Load        : {{ cpu_load.stdout }}
-          
+
           Memory Details:
           {{ memory_output.stdout }}
 
