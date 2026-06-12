@@ -1,0 +1,83 @@
+---
+- name: Linux Prechecks - Uptime, Kernel, and Health Checks
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    report_path: "/tmp/precheck_report_{{ inventory_hostname }}.txt"
+    disk_threshold: 80
+
+  tasks:
+
+    - name: Get uptime
+      command: uptime
+      register: uptime_output
+
+    - name: Get kernel version
+      command: uname -r
+      register: kernel_output
+
+    - name: Get CPU load
+      shell: uptime | awk -F'load average:' '{print $2}'
+      register: cpu_load
+
+    - name: Get memory usage
+      shell: free -m
+      register: memory_output
+
+    - name: Get disk usage
+      shell: df -h
+      register: disk_output
+
+    - name: Get root disk usage percentage
+      shell: df -h / | awk 'NR==2 {print $5}' | sed 's/%//'
+      register: root_disk_usage
+
+    - name: Check disk threshold
+      fail:
+        msg: "Disk usage exceeded {{ disk_threshold }}%! Current: {{ root_disk_usage.stdout }}%"
+      when: root_disk_usage.stdout | int > disk_threshold
+
+    - name: Display collected information
+      debug:
+        msg: |
+          Hostname        : {{ inventory_hostname }}
+          Uptime          : {{ uptime_output.stdout }}
+          Kernel Version  : {{ kernel_output.stdout }}
+          CPU Load        : {{ cpu_load.stdout }}
+          
+          Memory Details:
+          {{ memory_output.stdout }}
+
+          Disk Usage:
+          {{ disk_output.stdout }}
+
+    - name: Save report to file
+      copy:
+        dest: "{{ report_path }}"
+        content: |
+          =====================================
+          Precheck Report for {{ inventory_hostname }}
+          =====================================
+
+          Uptime:
+          {{ uptime_output.stdout }}
+
+          Kernel Version:
+          {{ kernel_output.stdout }}
+
+          CPU Load:
+          {{ cpu_load.stdout }}
+
+          Memory:
+          {{ memory_output.stdout }}
+
+          Disk:
+          {{ disk_output.stdout }}
+
+          Root Disk Usage:
+          {{ root_disk_usage.stdout }}%
+
+          Status:
+          SUCCESS - All checks passed
