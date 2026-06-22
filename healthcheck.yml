@@ -1,0 +1,46 @@
+---
+- name: Linux Health Check
+  hosts: all
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    - name: Get Hostname
+      command: hostname
+      register: hostname
+
+    - name: Get Uptime
+      command: uptime
+      register: uptime
+
+    - name: Get OS Version
+      command: cat /etc/redhat-release
+      register: os
+
+    - name: Get Kernel Version
+      command: uname -r
+      register: kernel
+
+    - name: Check Memory Usage
+      command: free -g
+      register: memory
+
+    - name: Check Disk Usage
+      command: df -h
+      register: disk
+
+    - name: Check CPU Load
+      shell: top -bn1 | grep "load average"
+      register: cpu
+
+    - name: Display Output
+      debug:
+        msg:
+          - "Hostname: {{ hostname.stdout }}"
+          - "Uptime: {{ uptime.stdout }}"
+          - "OS: {{ os.stdout }}"
+          - "Kernel: {{ kernel.stdout }}"
+          - "CPU Load: {{ cpu.stdout }}"
+          - "Memory: {{ memory.stdout }}"
+          - "Disk: {{ disk.stdout }}"
