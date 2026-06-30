@@ -1,0 +1,52 @@
+---
+- name: RHEL Patch and Reboot Playbook
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    - name: Check OS Version
+      debug:
+        msg: "Patching server {{ inventory_hostname }} running {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Clean yum cache
+      command: yum clean all
+
+    - name: Update all packages
+      yum:
+        name: "*"
+        state: latest
+      register: patching_result
+
+    - name: Check if reboot is required
+      command: needs-restarting -r
+      register: reboot_check
+      failed_when: reboot_check.rc not in [0, 1]
+      changed_when: false
+
+    - name: Display reboot requirement
+      debug:
+        msg: "Reboot required on {{ inventory_hostname }}"
+      when: reboot_check.rc == 1
+
+    - name: Reboot server if required
+      reboot:
+        msg: "Reboot initiated by Ansible after patching"
+        pre_reboot_delay: 30
+        reboot_timeout: 600
+      when: reboot_check.rc == 1
+
+    - name: Wait for system to come back
+      wait_for_connection:
+        delay: 20
+        timeout: 300
+      when: reboot_check.rc == 1
+
+    - name: Validate server after reboot
+      command: uptime
+      register: uptime_output
+
+    - name: Show uptime
+      debug:
+        var: uptime_output.stdout
