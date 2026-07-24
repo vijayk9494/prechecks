@@ -13,7 +13,7 @@
         comment: UNIX Administrator
         shell: /bin/bash
         create_home: yes
-        password: "{{ Dpadmin@2026 }}"
+        password: "{{ Dpadmin$2026 }}"
         state: present
 
     - name: Add SSH authorized key (optional)
