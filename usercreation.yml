@@ -1,0 +1,37 @@
+---
+- name: Create dpadmin user with passwordless sudo
+  hosts: all
+  become: yes
+
+  vars:
+    dpadmin_password: "$6$rounds=656000$HqgA2xYZxL1xM5qV$w9QxA5dM1D5Wz4vK2aNfYfB7r2vE8YV3K5f9P8dM6zN1L2v7lX4QmG3pJ7kL9sD4cR6wQ8eT1yU2iO5nA7Z0"
+
+  tasks:
+    - name: Create dpadmin user
+      user:
+        name: dpadmin
+        comment: UNIX Administrator
+        shell: /bin/bash
+        create_home: yes
+        password: "{{ Dpadmin@2026 }}"
+        state: present
+
+    - name: Add SSH authorized key (optional)
+      authorized_key:
+        user: dpadmin
+        state: present
+        key: "{{ lookup('file', 'dpadmin.pub') }}"
+      ignore_errors: true
+
+    - name: Configure passwordless sudo
+      copy:
+        dest: /etc/sudoers.d/dpadmin
+        content: |
+          dpadmin ALL=(ALL) NOPASSWD: ALL
+        owner: root
+        group: root
+        mode: '0440'
+
+    - name: Validate sudoers file
+      command: visudo -cf /etc/sudoers.d/dpadmin
+      changed_when: false
