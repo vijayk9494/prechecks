@@ -1,14 +1,31 @@
-- name: Disable root login override file
-  lineinfile:
-    path: /etc/ssh/sshd_config.d/01-permitrootlogin.conf
-    regexp: '^PermitRootLogin'
-    line: 'PermitRootLogin no'
-    create: yes
+---
+- name: Disable root login on all servers
+  hosts: all
+  become: true
 
-- name: Validate sshd configuration
-  command: sshd -t
+  tasks:
 
-- name: Restart sshd
-  service:
-    name: sshd
-    state: restarted
+    - name: Set PermitRootLogin to no
+      lineinfile:
+        path: /etc/ssh/sshd_config.d/01-permitrootlogin.conf
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+        create: yes
+
+    - name: Validate sshd configuration
+      command: sshd -t
+      changed_when: false
+
+    - name: Restart sshd service
+      service:
+        name: sshd
+        state: restarted
+
+    - name: Verify root login setting
+      command: sshd -T
+      register: sshd_output
+      changed_when: false
+
+    - name: Display effective setting
+      debug:
+        msg: "{{ inventory_hostname }} - {{ sshd_output.stdout_lines | select('search','permitrootlogin') | list }}"
