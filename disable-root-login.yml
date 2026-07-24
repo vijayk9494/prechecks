@@ -1,0 +1,39 @@
+---
+- name: Disable root SSH login on RHEL 9 servers
+  hosts: all
+  become: true
+
+  tasks:
+
+    - name: Backup sshd_config
+      copy:
+        src: /etc/ssh/sshd_config
+        dest: "/etc/ssh/sshd_config.bak_{{ ansible_date_time.date }}"
+        remote_src: yes
+
+    - name: Disable root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+
+    - name: Validate SSH configuration
+      command: sshd -t
+      register: sshd_check
+      changed_when: false
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+      when: sshd_check.rc == 0
+
+    - name: Verify setting
+      shell: grep "^PermitRootLogin" /etc/ssh/sshd_config
+      register: root_login_status
+      changed_when: false
+
+    - name: Display result
+      debug:
+        msg: "{{ inventory_hostname }} -> {{ root_login_status.stdout }}"
