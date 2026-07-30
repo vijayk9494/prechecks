@@ -17,11 +17,11 @@
           - s-nail
         state: present
 
-    - name: Enable and start postfix
+    - name: Enable postfix service
       service:
         name: postfix
-        state: started
         enabled: true
+        state: started
 
     - name: Backup main.cf
       copy:
@@ -30,11 +30,10 @@
         remote_src: true
         mode: "0644"
 
-    - name: Configure Postfix relay settings
-      blockinfile:
-        path: /etc/postfix/main.cf
-        marker: "# {mark} ANSIBLE OFFICE365 CONFIG"
-        block: |
+    - name: Replace main.cf with Office365 configuration
+      copy:
+        dest: /etc/postfix/main.cf
+        content: |
           relayhost = [smtp.office365.com]:587
           inet_protocols = ipv4
           smtp_sasl_auth_enable = yes
@@ -43,6 +42,9 @@
           smtp_use_tls = yes
           smtp_tls_security_level = encrypt
           smtp_generic_maps = hash:/etc/postfix/generic
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Create sasl_passwd file
       copy:
@@ -64,19 +66,18 @@
         group: root
         mode: "0644"
 
-    - name: Generate sasl_passwd.db
+    - name: Generate sasl_passwd database
       command: postmap /etc/postfix/sasl_passwd
 
-    - name: Generate generic.db
+    - name: Generate generic database
       command: postmap /etc/postfix/generic
 
     - name: Restart postfix
       service:
         name: postfix
         state: restarted
-        enabled: true
 
-    - name: Check postfix status
+    - name: Verify postfix status
       command: systemctl is-active postfix
       register: postfix_status
       changed_when: false
