@@ -1,6 +1,6 @@
 ---
 - name: Configure Postfix relay through Microsoft 365
-  hosts: mail_servers
+  hosts: all
   become: yes
 
   vars:
