@@ -1,0 +1,112 @@
+---
+- name: Configure Postfix relay through Microsoft 365
+  hosts: all
+  become: yes
+
+  vars:
+    relay_host: "[smtp.office365.com]:587"
+    smtp_username: "postman.DPWAPAC@dpwapac.com"
+    smtp_password: "LAtWZe1LbYQ4"
+
+  tasks:
+
+    - name: Install s-nail package
+      dnf:
+        name: s-nail
+        state: present
+
+    - name: Backup main.cf
+      copy:
+        src: /etc/postfix/main.cf
+        dest: /home/dpadmin/main.cf_bkp
+        remote_src: yes
+        mode: "0644"
+
+    - name: Configure relayhost
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^relayhost ='
+        line: "relayhost = {{ relay_host }}"
+
+    - name: Configure inet_protocols
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^inet_protocols ='
+        line: "inet_protocols = ipv4"
+
+    - name: Configure smtp_sasl_auth_enable
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^smtp_sasl_auth_enable ='
+        line: "smtp_sasl_auth_enable = yes"
+
+    - name: Configure smtp_sasl_password_maps
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^smtp_sasl_password_maps ='
+        line: "smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd"
+
+    - name: Configure smtp_sasl_security_options
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^smtp_sasl_security_options ='
+        line: "smtp_sasl_security_options = noanonymous"
+
+    - name: Configure smtp_use_tls
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^smtp_use_tls ='
+        line: "smtp_use_tls = yes"
+
+    - name: Configure smtp_tls_security_level
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^smtp_tls_security_level ='
+        line: "smtp_tls_security_level = encrypt"
+
+    - name: Configure smtp_generic_maps
+      lineinfile:
+        path: /etc/postfix/main.cf
+        regexp: '^smtp_generic_maps ='
+        line: "smtp_generic_maps = hash:/etc/postfix/generic"
+
+    - name: Create sasl_passwd file
+      copy:
+        dest: /etc/postfix/sasl_passwd
+        content: |
+          {{ relay_host }} {{ smtp_username }}:{{ smtp_password }}
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Create generic mapping file
+      copy:
+        dest: /etc/postfix/generic
+        content: |
+          root postman.DPWAPAC@dpwapac.com
+          enterprisedb postman.DPWAPAC@dpwapac.com
+          efm postman.DPWAPAC@dpwapac.com
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Generate sasl_passwd database
+      command: postmap /etc/postfix/sasl_passwd
+
+    - name: Generate generic database
+      command: postmap /etc/postfix/generic
+
+    - name: Restart and enable postfix
+      service:
+        name: postfix
+        state: restarted
+        enabled: yes
+
+    - name: Verify postfix service status
+      command: systemctl is-active postfix
+      register: postfix_status
+      changed_when: false
+
+    - name: Display postfix status
+      debug:
+        msg: "Postfix service status: {{ postfix_status.stdout }}"
