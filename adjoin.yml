@@ -1,6 +1,6 @@
 ---
 - name: Join RHEL9 to Active Directory
-  hosts: rhel9_servers
+  hosts: all
   become: true
 
   vars:
