@@ -1,0 +1,36 @@
+---
+- name: Configure AD group access and passwordless sudo
+  hosts: all
+  become: true
+
+  vars:
+    ad_group: "SBCP_Zodiac_Admin01"
+
+  tasks:
+
+    - name: Permit AD group in realm
+      ansible.builtin.command:
+        cmd: "realm permit -g {{ ad_group }}"
+      register: realm_permit
+      changed_when: realm_permit.rc == 0
+      failed_when: false
+
+    - name: Configure passwordless sudo for AD group
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ ad_group }}"
+        owner: root
+        group: root
+        mode: '0440'
+        content: |
+          %{{ ad_group }} ALL=(ALL) NOPASSWD: ALL
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Verify sudoers configuration
+      ansible.builtin.command:
+        cmd: visudo -c
+      register: visudo_check
+      changed_when: false
+
+    - name: Display visudo result
+      ansible.builtin.debug:
+        var: visudo_check.stdout_lines
