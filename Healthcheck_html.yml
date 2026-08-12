@@ -1,9 +1,14 @@
 ---
-- name: Collect RHEL Server Health Data
+- name: RHEL Health Check Report
   hosts: all
   gather_facts: yes
 
+  vars:
+    report_file: /tmp/rhel_health_report.html
+    email_to: "VijayKumar.Dasari@dpworld.com"
+
   tasks:
+
     - name: Get uptime
       command: uptime -p
       register: uptime_output
@@ -11,7 +16,7 @@
 
     - name: Get CPU usage
       shell: |
-        top -bn1 | awk '/Cpu\(s\)/ {print 100-$8}'
+        top -bn1 | awk -F'id,' '/Cpu/ {split($1,a,","); gsub(/ /,"",a[length(a)]); print 100-a[length(a)]}'
       register: cpu_output
       changed_when: false
 
@@ -21,37 +26,76 @@
       register: memory_output
       changed_when: false
 
-    - name: Save server health data
+    - name: Save health data
       set_fact:
         server_health:
           hostname: "{{ ansible_hostname }}"
           uptime: "{{ uptime_output.stdout }}"
           kernel: "{{ ansible_kernel }}"
-          cpu: "{{ cpu_output.stdout | float | round(2) }}"
-          memory: "{{ memory_output.stdout | float | round(2) }}"
+          cpu: "{{ cpu_output.stdout | default('0') }}"
+          memory: "{{ memory_output.stdout | default('0') }}"
 
-- name: Create and Email HTML Report
-  hosts: localhost
-  gather_facts: false
-
-  vars:
-    report_file: /tmp/rhel_health_report.html
-    email_to: "VijayKumar.Dasari@dpworld.com"
-
-  tasks:
-    - name: Generate HTML report
+    - name: Generate HTML Report
+      run_once: true
       copy:
         dest: "{{ report_file }}"
         content: |
-          <!DOCTYPE html>
           <html>
           <head>
-          <title>RHEL Health Report</title>
           <style>
-          body {font-family: Arial, sans-serif; margin:20px;}
-          h2 {color:#333;}
-          table {border-collapse: collapse; width:100%;}
+          body { font-family: Arial, sans-serif; }
+          table { border-collapse: collapse; width: 100%; }
+          th { background-color: #0078D7; color: white; }
           th, td {
-            border:1px solid #ddd;
-            padding:8px;
-            text-align
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+          }
+          tr:nth-child(even) { background-color: #f2f2f2; }
+          .high { background-color: #ff9999; }
+          </style>
+          </head>
+          <body>
+
+          <h2>RHEL Linux Health Report</h2>
+          <p>Generated from Ansible Tower</p>
+
+          <table>
+          <tr>
+              <th>Hostname</th>
+              <th>IP Address</th>
+              <th>Uptime</th>
+              <th>Kernel</th>
+              <th>CPU %</th>
+              <th>Memory %</th>
+          </tr>
+
+          {% for host in ansible_play_hosts_all %}
+          <tr>
+              <td>{{ hostvars[host]['server_health']['hostname'] }}</td>
+              <td>{{ hostvars[host]['ansible_default_ipv4']['address'] | default('NA') }}</td>
+              <td>{{ hostvars[host]['server_health']['uptime'] }}</td>
+              <td>{{ hostvars[host]['server_health']['kernel'] }}</td>
+
+              <td {% if hostvars[host]['server_health']['cpu']|float > 80 %}class="high"{% endif %}>
+              {{ hostvars[host]['server_health']['cpu'] }}
+              </td>
+
+              <td {% if hostvars[host]['server_health']['memory']|float > 80 %}class="high"{% endif %}>
+              {{ hostvars[host]['server_health']['memory'] }}
+              </td>
+          </tr>
+          {% endfor %}
+
+          </table>
+          </body>
+          </html>
+
+    - name: Send Report Mail
+      run_once: true
+      shell: |
+        cat {{ report_file }} | mailx \
+        -a "Content-Type: text/html" \
+        -s "RHEL Health Check Report" \
+        {{ email_to }}
+      changed_when: true
