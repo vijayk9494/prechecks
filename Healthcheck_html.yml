@@ -1,47 +1,48 @@
 ---
-- name: Collect Health Information
+- name: Linux Health Check and Email Report
   hosts: all
-  gather_facts: yes
+  gather_facts: no
 
   tasks:
 
-    - name: Get uptime
-      command: uptime -p
-      register: uptime_out
-      changed_when: false
+    - name: Get hostname
+      shell: hostname
+      register: hostname_out
 
-    - name: Get CPU utilization
+    - name: Get CPU Usage %
       shell: |
-        top -bn1 | awk -F'id,' '/Cpu/ {print 100-$1+0}'
+        top -bn1 | awk -F'id,' '/Cpu/ {
+          split($1,a,",");
+          gsub(/[^0-9.]/,"",a[length(a)]);
+          printf "%.2f",100-a[length(a)]
+        }'
       register: cpu_out
-      changed_when: false
-      failed_when: false
 
-    - name: Get memory utilization
+    - name: Get Memory Usage %
       shell: |
         free | awk '/Mem:/ {printf "%.2f", ($3/$2)*100}'
       register: mem_out
-      changed_when: false
 
-    - name: Collect host data
+    - name: Get Disk Usage %
+      shell: |
+        df -P / | awk 'NR==2 {gsub("%","",$5); print $5}'
+      register: disk_out
+
+    - name: Store host data
       set_fact:
-        report_data:
-          hostname: "{{ ansible_hostname }}"
-          ip: "{{ ansible_default_ipv4.address | default(inventory_hostname) }}"
-          uptime: "{{ uptime_out.stdout }}"
-          kernel: "{{ ansible_kernel }}"
-          cpu: "{{ cpu_out.stdout | default('0') }}"
-          memory: "{{ mem_out.stdout | default('0') }}"
+        health_data:
+          hostname: "{{ hostname_out.stdout }}"
+          cpu: "{{ cpu_out.stdout }}"
+          memory: "{{ mem_out.stdout }}"
+          disk: "{{ disk_out.stdout }}"
 
-
-
-- name: Generate and Mail Report
-  hosts: 10.144.40.68
+- name: Generate HTML and Send Email
+  hosts: localhost
   gather_facts: no
 
   vars:
-    report_file: /tmp/rhel_health_report.html
-    email_to: VijayKumar.Dasari@dpworld.com
+    report_file: /tmp/LinuxHealthReport.html
+    recipient: VijayKumar.Dasari@dpworld.com
 
   tasks:
 
@@ -49,99 +50,81 @@
       copy:
         dest: "{{ report_file }}"
         content: |
-          <!DOCTYPE html>
           <html>
           <head>
           <style>
           body {
-            font-family: Arial, sans-serif;
+              font-family: Segoe UI;
+              margin:20px;
           }
-
-          h2 {
-            color: #003366;
-          }
-
           table {
-            border-collapse: collapse;
-            width: 100%;
+              border-collapse: collapse;
+              width: 100%;
           }
-
           th {
-            background: #0078D7;
-            color: white;
-            padding: 8px;
-            border: 1px solid #ddd;
+              background:#003366;
+              color:white;
+              border:1px solid black;
+              padding:8px;
           }
-
           td {
-            padding: 8px;
-            border: 1px solid #ddd;
-            text-align: center;
-          }
-
-          tr:nth-child(even) {
-            background-color: #f2f2f2;
-          }
-
-          .critical {
-            background-color: #ff9999;
-            font-weight: bold;
+              border:1px solid black;
+              padding:8px;
+              text-align:center;
           }
           </style>
           </head>
-
           <body>
 
-          <h2>RHEL Linux Health Report</h2>
+          <h2>Linux Server Health Report</h2>
 
           <table>
-            <tr>
+          <tr>
+              <th>Server</th>
               <th>Hostname</th>
-              <th>IP Address</th>
-              <th>Uptime</th>
-              <th>Kernel</th>
               <th>CPU %</th>
               <th>Memory %</th>
-            </tr>
+              <th>Disk %</th>
+              <th>Status</th>
+          </tr>
 
-            {% for host in groups['all'] %}
-            <tr>
-              <td>{{ hostvars[host]['report_data']['hostname'] }}</td>
-              <td>{{ hostvars[host]['report_data']['ip'] }}</td>
-              <td>{{ hostvars[host]['report_data']['uptime'] }}</td>
-              <td>{{ hostvars[host]['report_data']['kernel'] }}</td>
+          {% for host in groups['all'] %}
+          {% set cpu = hostvars[host]['health_data']['cpu'] | float %}
+          {% set mem = hostvars[host]['health_data']['memory'] | float %}
+          {% set disk = hostvars[host]['health_data']['disk'] | float %}
 
-              <td {% if hostvars[host]['report_data']['cpu']|float > 80 %}class="critical"{% endif %}>
-                {{ hostvars[host]['report_data']['cpu'] }}
-              </td>
+          {% if cpu > 80 or mem > 80 or disk > 80 %}
+          {% set color = '#ffcccc' %}
+          {% set status = 'ALERT' %}
+          {% else %}
+          {% set color = '#ccffcc' %}
+          {% set status = 'OK' %}
+          {% endif %}
 
-              <td {% if hostvars[host]['report_data']['memory']|float > 80 %}class="critical"{% endif %}>
-                {{ hostvars[host]['report_data']['memory'] }}
-              </td>
-            </tr>
-            {% endfor %}
+          <tr style="background-color:{{ color }}">
+              <td>{{ host }}</td>
+              <td>{{ hostvars[host]['health_data']['hostname'] }}</td>
+              <td>{{ hostvars[host]['health_data']['cpu'] }}</td>
+              <td>{{ hostvars[host]['health_data']['memory'] }}</td>
+              <td>{{ hostvars[host]['health_data']['disk'] }}</td>
+              <td>{{ status }}</td>
+          </tr>
+          {% endfor %}
 
           </table>
 
           </body>
           </html>
 
-    - name: Verify report generated
-      shell: cat {{ report_file }}
-      register: report_check
-
-    - debug:
-        var: report_check.stdout_lines
-
-    - name: Send report by mailx
-      shell: |
-        (
-          echo "Linux Health Report Attached."
-        ) | mailx \
-          -s "RHEL Linux Health Report" \
-          -a {{ report_file }} \
-          {{ email_to }}
-      register: mail_status
-
-    - debug:
-        var: mail_status.stdout
+    - name: Send Email
+      mail:
+        host: smtp.office365.com
+        port: 587
+        secure: starttls
+        username: "{{ postman.DPWAPAC@dpwapac.com: }}"
+        password: "{{ 9hWHkreScR@ }}"
+        from: "{{ dpadmin }}"
+        to: "{{ VijayKumar.Dasari@dpworld.com }}"
+        subject: "Linux Server Health Report"
+        subtype: html
+        body: "{{ lookup('file', report_file) }}"
