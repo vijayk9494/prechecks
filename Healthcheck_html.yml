@@ -1,5 +1,5 @@
 ---
-- name: Collect Linux Health Data
+- name: Collect RHEL Server Health Data
   hosts: all
   gather_facts: yes
 
@@ -21,7 +21,7 @@
       register: memory_output
       changed_when: false
 
-    - name: Store collected data
+    - name: Save server health data
       set_fact:
         server_health:
           hostname: "{{ ansible_hostname }}"
@@ -30,15 +30,16 @@
           cpu: "{{ cpu_output.stdout | float | round(2) }}"
           memory: "{{ memory_output.stdout | float | round(2) }}"
 
-- name: Generate HTML Report
+- name: Create and Email HTML Report
   hosts: localhost
-  gather_facts: no
+  gather_facts: false
 
   vars:
-    report_file: "/tmp/rhel_health_report.html"
+    report_file: /tmp/rhel_health_report.html
+    email_to: "VijayKumar.Dasari@dpworld.com"
 
   tasks:
-    - name: Create HTML report
+    - name: Generate HTML report
       copy:
         dest: "{{ report_file }}"
         content: |
@@ -47,60 +48,10 @@
           <head>
           <title>RHEL Health Report</title>
           <style>
-              body { font-family: Arial, sans-serif; margin: 20px; }
-              h1 { color: #333; }
-              table { border-collapse: collapse; width: 100%; }
-              th, td {
-                  border: 1px solid #ddd;
-                  padding: 8px;
-                  text-align: center;
-              }
-              th {
-                  background-color: #0078D7;
-                  color: white;
-              }
-              tr:nth-child(even) {
-                  background-color: #f2f2f2;
-              }
-              .warning {
-                  background-color: #ff9999;
-              }
-          </style>
-          </head>
-          <body>
-
-          <h1>RHEL Linux Health Report</h1>
-          <p>Generated: {{ lookup('pipe','date') }}</p>
-
-          <table>
-          <tr>
-              <th>Hostname</th>
-              <th>Uptime</th>
-              <th>Kernel</th>
-              <th>CPU Used (%)</th>
-              <th>Memory Used (%)</th>
-          </tr>
-
-          {% for host in groups['all'] %}
-          <tr>
-              <td>{{ hostvars[host]['server_health']['hostname'] }}</td>
-              <td>{{ hostvars[host]['server_health']['uptime'] }}</td>
-              <td>{{ hostvars[host]['server_health']['kernel'] }}</td>
-
-              <td class="{% if hostvars[host]['server_health']['cpu']|float > 80 %}warning{% endif %}">
-                  {{ hostvars[host]['server_health']['cpu'] }}
-              </td>
-
-              <td class="{% if hostvars[host]['server_health']['memory']|float > 80 %}warning{% endif %}">
-                  {{ hostvars[host]['server_health']['memory'] }}
-              </td>
-          </tr>
-          {% endfor %}
-
-          </table>
-          </body>
-          </html>
-
-    - name: Show report location
-      debug:
-        msg: "HTML report generated at {{ report_file }}"
+          body {font-family: Arial, sans-serif; margin:20px;}
+          h2 {color:#333;}
+          table {border-collapse: collapse; width:100%;}
+          th, td {
+            border:1px solid #ddd;
+            padding:8px;
+            text-align
