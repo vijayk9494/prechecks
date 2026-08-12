@@ -1,55 +1,147 @@
 ---
-- name: Linux Health Check Report
+- name: Collect Health Information
   hosts: all
   gather_facts: yes
-
-  vars:
-    report_file: /tmp/rhel_health_report.html
-    jump_server: 10.144.40.68
-    email_to: VijayKumar.Dasari@dpworld.com
 
   tasks:
 
     - name: Get uptime
       command: uptime -p
-      register: uptime_output
+      register: uptime_out
       changed_when: false
 
     - name: Get CPU utilization
       shell: |
-        top -bn1 | grep "Cpu(s)" | awk '{print 100-$8}'
-      register: cpu_output
+        top -bn1 | awk -F'id,' '/Cpu/ {print 100-$1+0}'
+      register: cpu_out
       changed_when: false
+      failed_when: false
 
     - name: Get memory utilization
       shell: |
         free | awk '/Mem:/ {printf "%.2f", ($3/$2)*100}'
-      register: memory_output
+      register: mem_out
       changed_when: false
 
-    - name: Save server data
+    - name: Collect host data
       set_fact:
-        server_health:
+        report_data:
           hostname: "{{ ansible_hostname }}"
           ip: "{{ ansible_default_ipv4.address | default(inventory_hostname) }}"
-          uptime: "{{ uptime_output.stdout }}"
+          uptime: "{{ uptime_out.stdout }}"
           kernel: "{{ ansible_kernel }}"
-          cpu: "{{ cpu_output.stdout | trim }}"
-          memory: "{{ memory_output.stdout | trim }}"
+          cpu: "{{ cpu_out.stdout | default('0') }}"
+          memory: "{{ mem_out.stdout | default('0') }}"
 
-    - name: Generate HTML report on jump server
-      run_once: true
-      delegate_to: "{{ jump_server }}"
+
+
+- name: Generate and Mail Report
+  hosts: 10.144.40.68
+  gather_facts: no
+
+  vars:
+    report_file: /tmp/rhel_health_report.html
+    email_to: VijayKumar.Dasari@dpworld.com
+
+  tasks:
+
+    - name: Generate HTML Report
       copy:
         dest: "{{ report_file }}"
         content: |
           <!DOCTYPE html>
           <html>
           <head>
-          <title>RHEL Health Report</title>
           <style>
-          body {font-family: Arial, sans-serif; margin:20px;}
-          h2 {color:#003366;}
-          table {border-collapse: collapse; width:100%;}
+          body {
+            font-family: Arial, sans-serif;
+          }
+
+          h2 {
+            color: #003366;
+          }
+
+          table {
+            border-collapse: collapse;
+            width: 100%;
+          }
+
           th {
-     
+            background: #0078D7;
+            color: white;
+            padding: 8px;
+            border: 1px solid #ddd;
+          }
+
+          td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: center;
+          }
+
+          tr:nth-child(even) {
+            background-color: #f2f2f2;
+          }
+
+          .critical {
+            background-color: #ff9999;
+            font-weight: bold;
+          }
+          </style>
+          </head>
+
+          <body>
+
+          <h2>RHEL Linux Health Report</h2>
+
+          <table>
+            <tr>
+              <th>Hostname</th>
+              <th>IP Address</th>
+              <th>Uptime</th>
+              <th>Kernel</th>
+              <th>CPU %</th>
+              <th>Memory %</th>
+            </tr>
+
+            {% for host in groups['all'] %}
+            <tr>
+              <td>{{ hostvars[host]['report_data']['hostname'] }}</td>
+              <td>{{ hostvars[host]['report_data']['ip'] }}</td>
+              <td>{{ hostvars[host]['report_data']['uptime'] }}</td>
+              <td>{{ hostvars[host]['report_data']['kernel'] }}</td>
+
+              <td {% if hostvars[host]['report_data']['cpu']|float > 80 %}class="critical"{% endif %}>
+                {{ hostvars[host]['report_data']['cpu'] }}
+              </td>
+
+              <td {% if hostvars[host]['report_data']['memory']|float > 80 %}class="critical"{% endif %}>
+                {{ hostvars[host]['report_data']['memory'] }}
+              </td>
+            </tr>
+            {% endfor %}
+
+          </table>
+
+          </body>
+          </html>
+
+    - name: Verify report generated
+      shell: cat {{ report_file }}
+      register: report_check
+
+    - debug:
+        var: report_check.stdout_lines
+
+    - name: Send report by mailx
+      shell: |
+        (
+          echo "Linux Health Report Attached."
+        ) | mailx \
+          -s "RHEL Linux Health Report" \
+          -a {{ report_file }} \
+          {{ email_to }}
+      register: mail_status
+
+    - debug:
+        var: mail_status.stdout
